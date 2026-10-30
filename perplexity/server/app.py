@@ -93,6 +93,8 @@ async def app_lifespan(server: FastMCP):
             await model_refresh_task
         pool.stop_heartbeat()
         await asyncio.gather(*list(pool._heartbeat_tasks), return_exceptions=True)
+        from .tool_bridge import close_bridge
+        await close_bridge()
         await runtime.close()
         from .chat_input import close_file_inputs
         await close_file_inputs()

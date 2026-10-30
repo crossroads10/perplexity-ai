@@ -280,8 +280,9 @@ The legacy tools `list_models`, `search`, `research`, `perplexity_ask`,
 **Base URL:** `http://127.0.0.1:8000/v1`
 **Authorization:** `Bearer <MCP_TOKEN>`
 
-Chat completions stream live upstream events by default. Pass `"stream": false`
-to wait for a complete JSON response. The Playground also requests optional
+Chat completions return complete JSON by default. Pass `"stream": true`
+to receive live events. This also supports gateways that omit a false stream flag.
+The Playground also requests optional
 Perplexity progress chunks so it can display analysis, web search, source review,
 and answer-writing stages. Other OpenAI clients can opt in with
 `"perplexity": {"include_progress": true}`; the extension is disabled by default
@@ -354,8 +355,12 @@ paired `-thinking` model before calling Perplexity:
 ```
 
 Models without a reasoning variant return an `invalid_request_error`.
-`reasoning_effort` is intentionally rejected: Perplexity's web endpoint exposes
-reasoning through model selection and does not provide a verified effort control.
+On `/v1/chat/completions`, `reasoning_effort` accepts `none`, `minimal`, `low`,
+`medium`, `high`, `xhigh`, and `max` for compatibility with gateways that inject
+this field. These values are ignored: Perplexity's web endpoint does not provide
+a verified effort control. They do not enable or disable thinking or change the
+selected model; use `thinking: true` or an explicit `-thinking` model for that.
+Other values and non-string values return an `invalid_request_error`.
 
 ### Supported Models
 
@@ -403,3 +408,9 @@ Static built-in mappings are used only when no valid cache exists.
 https://github.com/helallao/perplexity-ai 
 + fix param lack, auto redirect to GPT-5.6-nano, and add fancy mcp/restapi server 
 <img width="745" height="229" alt="image" src="https://github.com/user-attachments/assets/2513e13e-cfc3-49d7-82cd-8dbae20f8991" />
+
+## Experimental Claude Code model bridge
+
+The optional JSON bridge exposes native Anthropic `/v1/messages` and `/v1/messages/count_tokens` endpoints for Claude Code model replacement. It validates client tool proposals and preserves tool results; Claude Code owns tool execution and permissions. Long context uses complete text attachments, and usage remains estimated. This is compatibility over Perplexity Ask, not raw underlying-model API access. See [setup, validation, limitations, and rollback](TOOL-BRIDGE.md).
+
+The current local version adds per-result context checkpoints and metadata, a bounded admission queue with HTTP retry headers, explicit unsupported-parameter headers, and an optional project file preflight hook. The hook checks file hashes, read coverage, and exact edit matches; it does not grant tool permissions. Operational progress is streamed, while model answers still wait for complete validation. These checks do not guarantee complete model comprehension, native prompt caching, or exactly-once tool execution.

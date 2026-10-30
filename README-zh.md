@@ -365,8 +365,8 @@ API/MCP 创建的会话使用同一 SQLite 数据库和账号绑定规则，但�
 
 **认证:** 在请求头中添加 `Authorization: Bearer <MCP_TOKEN>`
 
-聊天补全默认实时转发上游流式事件。显式传入 `"stream": false`
-可等待完整 JSON 响应。Playground 会自动请求可选的 Perplexity 进度事件，
+聊天补全默认返回完整 JSON 响应；显式传入 `"stream": true`
+可实时接收上游流式事件。这样兼容省略 `stream: false` 的 OpenAI 网关。Playground 会自动请求可选的 Perplexity 进度事件，
 用于展示分析问题、搜索网页、整理来源和生成答案等阶段。其他 OpenAI 客户端
 可通过 `"perplexity": {"include_progress": true}` 主动启用；为保持兼容，
 API 默认不发送该扩展。
@@ -426,8 +426,11 @@ curl http://127.0.0.1:8000/v1/chat/completions \
 
 对于同时提供普通与推理版本的模型，可保持普通模型 ID 并传入
 `"thinking": true`，服务端会在调用 Perplexity 前解析为对应的
-`-thinking` 模型。`reasoning_effort` 不受 Perplexity Web 上游支持，会返回
-`invalid_request_error`。
+`-thinking` 模型。为兼容会自动添加推理强度字段的网关，`/v1/chat/completions`
+接受 `reasoning_effort` 的 `none`、`minimal`、`low`、`medium`、`high`、`xhigh`
+和 `max` 值，但会忽略这些值：Perplexity Web 上游没有已验证的推理强度控制。
+该字段不会开启或关闭 Thinking，也不会替换所选模型；请使用 `thinking: true`
+或明确的 `-thinking` 模型。其他值和非字符串值仍返回 `invalid_request_error`。
 
 ### 支持的模型
 
@@ -511,3 +514,9 @@ https://github.com/escapeWu/skills/blob/main/skills/perplexity-search/SKILL.md
 
 ## 上游项目
 https://github.com/helallao/perplexity-ai
+
+## Claude Code 模型替代适配器（实验性）
+
+可选 JSON 桥接提供原生 Anthropic `/v1/messages` 和 `/v1/messages/count_tokens` 接口，用 Perplexity Ask 承接 Claude Code 模型请求。适配器校验工具提案并保留工具结果，实际执行与权限仍由 Claude Code 管理。长上下文采用完整文本附件，用量为估算值；这不是底层模型原生 API 透传。参见[配置、实测、限制与回退](TOOL-BRIDGE.md)。
+
+当前本地版本增加工具结果检查点和元数据、有界准入队列及 HTTP 重试头、未支持参数提示头，以及可选的项目文件预检 Hook。Hook 核对文件哈希、读取范围和精确编辑匹配，不授予工具权限。运行阶段可及时显示，模型答案仍须完整校验后才返回；这些措施不保证模型理解全文，也不提供原生 prompt cache 或工具恰好执行一次的保证。

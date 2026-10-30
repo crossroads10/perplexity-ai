@@ -20,6 +20,12 @@ from .upstream_protocol import ResponseState, SSEDecoder, UpstreamError, check_r
 logger = logging.getLogger(__name__)
 
 
+def valid_search_source(value):
+    """Built-ins or a source id returned by Perplexity's /rest/sources."""
+    return isinstance(value, str) and (value in ("web", "scholar", "social") or
+        re.fullmatch(r"[a-z0-9_]+_[0-9a-f]{32}", value) is not None)
+
+
 def _normalize_follow_up(follow_up):
     if follow_up is None:
         return None, []
@@ -65,9 +71,10 @@ class Client:
     def account_hint(self) -> str:
         # Perplexity's session middleware selects the account via the
         # x-pplx-account header; the id is recoverable from our own cookies.
-        hint = self._cookies.get("__Host-pplx-last-active-account")
+        cookies = getattr(self, '_cookies', {})
+        hint = cookies.get("__Host-pplx-last-active-account")
         if not hint:
-            for name in self._cookies:
+            for name in cookies:
                 if name.startswith("__Secure-pplx.session."):
                     hint = name[len("__Secure-pplx.session."):]
                     break
@@ -77,6 +84,14 @@ class Client:
         hint = self.account_hint()
         headers = {"x-pplx-account": hint} if hint else {}
         return self.session.get(ENDPOINT_AUTH_SESSION, headers=headers, timeout=30)
+
+    def account_request_headers(self):
+        """Account selection for Perplexity APIs only, never object storage."""
+        info = getattr(self, '_user_info', {})
+        user = info.get('user') if isinstance(info, dict) else None
+        account = user.get('id') if isinstance(user, dict) else None
+        account = account or self.account_hint()
+        return {'x-pplx-account': str(account)} if account else {}
 
     @property
     def cookies(self) -> dict:
@@ -144,7 +159,7 @@ class Client:
                        follow_up=None, incognito=False, uploaded_files=None):
         assert mode in ("auto", "pro", "reasoning", "deep research"), "Invalid search mode."
         sources = ["web"] if sources is None else sources
-        assert all(x in ("web", "scholar", "social") for x in sources), "Invalid sources."
+        assert all(valid_search_source(x) for x in sources), "Invalid sources."
         tier = getattr(self, "subscription_tier", normalize_subscription_tier(None, own_account=self.own))
         try:
             definition = get_model_registry().resolve(mode, model, account_tier=tier)
@@ -162,6 +177,9 @@ class Client:
             "query_source": "followup" if backend else "home", "source": "default",
             "sources": sources, "version": "2.18",
         }}
+        if any(x not in ("web", "scholar", "social") for x in sources):
+            payload["params"].update(search_focus="internet",
+                should_ask_for_mcp_tool_confirmation=True, supports_tool_approval_modal=True)
         return payload, self._search_request_headers(frontend, language)
 
     def search(self, query, mode="auto", model=None, sources=None, files=None, stream=False,
@@ -174,7 +192,7 @@ class Client:
         uploaded = []
         for filename, content in files.items():
             file_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-            response = self.session.post(ENDPOINT_UPLOAD_URL, params={"version": "2.18", "source": "default"},
+            response = self.session.post(ENDPOINT_UPLOAD_URL, headers=self.account_request_headers(), params={"version": "2.18", "source": "default"},
                 json={"content_type": file_type, "file_size": len(content), "filename": filename,
                       "force_image": False, "source": "default"}, timeout=30)
             check_http_status(response.status_code, response.headers)

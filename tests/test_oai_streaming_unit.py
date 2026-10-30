@@ -69,13 +69,12 @@ async def test_downstream_close_stops_request_owned_job(api_runtime):
 
 
 @pytest.mark.asyncio
-async def test_chat_completions_streams_by_default(api_runtime):
+async def test_chat_completions_omitted_stream_returns_json(api_runtime):
     api_runtime.test_upstream.release["[User]: hello"].set()
     response = await oai.oai_chat_completions(request_for("/v1/chat/completions", payload()))
-    assert isinstance(response, StreamingResponse)
+    assert response.headers["content-type"].startswith("application/json")
     assert response.headers["x-session-id"].startswith("sess_")
-    content = [item async for item in response.body_iterator]
-    assert content[-1] == "data: [DONE]\n\n"
+    assert json.loads(response.body)["choices"][0]["message"]["content"] == "[User]: hello partial complete"
 
 
 @pytest.mark.asyncio
@@ -107,7 +106,48 @@ async def test_thinking_flag_selects_and_persists_effective_model(api_runtime):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("options,status", [({"thinking": "yes"}, 400), ({"reasoning_effort": "high"}, 400),
+@pytest.mark.parametrize("effort", ["none", "minimal", "low", "medium", "high", "xhigh", "max"])
+@pytest.mark.parametrize("thinking", [False, True])
+async def test_gateway_reasoning_effort_preserves_explicit_thinking_mode(api_runtime, effort, thinking):
+    api_runtime.test_upstream.release["[User]: hello"].set()
+    response = await oai.oai_chat_completions(request_for("/v1/chat/completions",
+        payload(model="gpt-5-6-terra", reasoning_effort=effort, thinking=thinking, stream=False)))
+    assert response.status_code == 200
+    data = json.loads(response.body)
+    expected = "gpt-5-6-terra-thinking" if thinking else "gpt-5-6-terra"
+    assert data["model"] == expected
+    assert api_runtime.test_upstream.calls[-1]["model"] == expected.replace("5-6", "5.6")
+    assert api_runtime.sessions.get_session(data["session_id"]).model == expected
+
+
+@pytest.mark.asyncio
+async def test_gateway_default_effort_streams_without_switching_model(api_runtime):
+    api_runtime.test_upstream.release["[User]: hello"].set()
+    response = await oai.oai_chat_completions(request_for("/v1/chat/completions",
+        payload(model="gpt-5-6-terra", reasoning_effort="medium", stream=True)))
+    assert isinstance(response, StreamingResponse)
+    content = [item async for item in response.body_iterator]
+    assert content[-1] == "data: [DONE]\n\n"
+    chunks = [decode(item) for item in content[:-1]]
+    assert all(item["model"] == "gpt-5-6-terra" for item in chunks)
+    assert chunks[-1]["choices"][0]["finish_reason"] == "stop"
+    assert api_runtime.test_upstream.calls[-1]["model"] == "gpt-5.6-terra"
+
+
+@pytest.mark.asyncio
+async def test_gateway_effort_preserves_explicit_thinking_model(api_runtime):
+    api_runtime.test_upstream.release["[User]: hello"].set()
+    response = await oai.oai_chat_completions(request_for("/v1/chat/completions",
+        payload(model="gpt-5-6-terra-thinking", reasoning_effort="none", stream=False)))
+    assert response.status_code == 200
+    assert json.loads(response.body)["model"] == "gpt-5-6-terra-thinking"
+    assert api_runtime.test_upstream.calls[-1]["model"] == "gpt-5.6-terra-thinking"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("options,status", [({"thinking": "yes"}, 400),
+    ({"reasoning_effort": "unsupported"}, 400), ({"reasoning_effort": 1}, 400),
+    ({"reasoning_effort": []}, 400), ({"reasoning_effort": {}}, 400),
     ({"session_id": "sess_" + "0" * 32}, 404), ({"stream": 1}, 400), ({"model": " "}, 400)])
 async def test_invalid_requests_never_start_upstream(api_runtime, options, status):
     response = await oai.oai_chat_completions(request_for("/v1/chat/completions", payload(**options)))

@@ -48,7 +48,10 @@ def offline_boundary(monkeypatch, request, tmp_path):
     monkeypatch.setattr(Session, "request", sync_request)
     monkeypatch.setattr(AsyncSession, "request", async_request)
     from perplexity.server import app
+    from perplexity.server import tool_bridge
     from perplexity import model_registry
+    monkeypatch.setenv("PPLX_TOOL_BRIDGE_CONFIG", str(tmp_path / "no-live-bridge.json"))
+    monkeypatch.setattr(tool_bridge, "_bridge", None)
     monkeypatch.setattr(model_registry, "_registry", model_registry.ModelRegistry(cache_path=tmp_path / "unused-cache.json"))
     monkeypatch.setattr(app, "_pool", None)
     def unconfigured():
@@ -80,7 +83,7 @@ async def api_runtime(tmp_path, monkeypatch):
     await runtime.start()
     async def get_runtime(*args):
         return runtime
-    for name in ("oai", "webui", "jobs", "mcp", "app", "admin"):
+    for name in ("oai", "anthropic", "webui", "jobs", "mcp", "app", "admin"):
         module = importlib.import_module("perplexity.server." + name)
         monkeypatch.setattr(module, "get_job_runtime", get_runtime, raising=False)
         monkeypatch.setattr(module, "get_pool", lambda: pool, raising=False)

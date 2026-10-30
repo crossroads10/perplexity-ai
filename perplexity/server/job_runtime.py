@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
 
 from ..model_registry import get_model_registry
+from ..client import valid_search_source
 from ..upstream_async import search_stream
 from ..upstream_protocol import UpstreamError, clean_result
 from ..logger import get_logger
@@ -128,11 +129,11 @@ class JobRuntime:
     async def _submit(self, *, query, mode="auto", model=None, model_id="auto", session_id=None,
                      user_content=None, files=None, search_sources=None, language="en-US",
                      incognito=False, origin="webui", idempotency_key=None, principal="default",
-                     requested_model=None):
+                     requested_model=None, account_id=None):
         query = sanitize_query(query)
         if session_id is not None:
             validate_session_id(session_id)
-        if search_sources is not None and (not isinstance(search_sources, list) or not search_sources or any(source not in ("web", "scholar", "social") for source in search_sources)):
+        if search_sources is not None and (not isinstance(search_sources, list) or any(not valid_search_source(source) for source in search_sources)):
             raise ValueError("Invalid search sources")
         if not isinstance(language, str) or not language or any(char in language for char in "\r\n\x00"):
             raise ValueError("Invalid search language")
@@ -142,11 +143,13 @@ class JobRuntime:
         normalized_files = {name: data.encode() if isinstance(data, str) else data for name, data in (files or {}).items()}
         payload = {"query": query, "mode": mode, "model": model, "model_id": model_id,
                    "user_content": sanitize_message_content(query if user_content is None else user_content),
-                   "search_sources": search_sources or ["web"], "language": language,
+                   "search_sources": ["web"] if search_sources is None else search_sources, "language": language,
                    "incognito": bool(incognito or self.pool.is_incognito_enabled()),
                    "file_hashes": {name: hashlib.sha256(data).hexdigest() for name, data in normalized_files.items()}}
         if requested_model is not None:
             payload["requested_model"] = requested_model
+        if account_id is not None:
+            payload["bound_account_id"] = account_id
         async with self.admission:
             if not self.accepting or self.dispatcher is None or self.dispatcher.done():
                 raise JobError("Task runner is not accepting work", "service_unavailable", 503)
@@ -157,9 +160,11 @@ class JobRuntime:
             if len(self.pending) >= limits["global_max_queued"]:
                 raise JobError("Task queue is full", "queue_full", 429)
             session = await self.db(self.sessions.get_session, session_id) if session_id else None
+            if session and account_id and session.client_id != account_id:
+                raise ValueError("Session belongs to another account")
             try:
                 account = self.pool.select_for_job(get_model_registry().required_tier(mode, model), mode,
-                    session.client_id if session else None, enqueue=True)
+                    session.client_id if session else account_id, enqueue=True)
             except OverflowError as exc:
                 raise JobError("Account queue is full", "queue_full", 429) from exc
             if account is None:
@@ -295,20 +300,33 @@ class JobRuntime:
             self.file_reads.add(read)
             read.add_done_callback(self._file_read_done)
             files = await asyncio.shield(read)
+        previous, latest, last_publish = "", {}, 0.0
+        progress_tracker, progress_states = ProgressTracker(), {}
+        transport_events = []
+        started = time.monotonic()
+        async def report_transport(stage):
+            if transport_events and transport_events[-1]['stage'] == stage:
+                return
+            event = {'stage':stage,'elapsed_s':round(time.monotonic()-started,3)}
+            transport_events.append(event)
+            # Do not advance the answer in a status-only snapshot: a subscriber
+            # joining now must not receive that text again in the next delta.
+            snapshot = {**clean_result(latest), 'answer':previous,
+                        'progress':list(progress_states.values()),'transport_events':list(transport_events)}
+            await self.db(self.store.publish,job_id,'transport',event,snapshot)
+            await self._notify(job_id)
+        transport_options = {'progress_callback':report_transport} if self.transport is search_stream else {}
         upstream = self.transport(client, query=payload["query"], mode=payload["mode"],
             model=payload["model"], sources=payload["search_sources"], language=payload["language"],
             follow_up=session.follow_up(), incognito=payload["incognito"], files=files,
             timeout=self.pool.get_search_timeout(payload["mode"]),
-            file_upload_timeout=self.pool.get_file_upload_timeout())
-        previous, latest, last_publish = "", {}, 0.0
-        progress_tracker, progress_states = ProgressTracker(), {}
+            file_upload_timeout=self.pool.get_file_upload_timeout(), **transport_options)
         initial = progress_tracker.update({"text": [{"step_type": "INITIAL_QUERY"}]})
         for progress in initial:
             progress_states[progress["id"]] = progress
         await self.db(self.store.publish, job_id, "snapshot", {"answer": "", "progress": initial}, {"answer": "", "progress": initial})
         await self._notify(job_id)
         first_output = False
-        started = time.monotonic()
         try:
             async for chunk in upstream:
                 latest = chunk
@@ -320,6 +338,8 @@ class JobRuntime:
                 if answer and not first_output:
                     first_output = True
                     self.metrics["ttft_seconds"] += time.monotonic() - started
+                    await report_transport('generating')
+                snapshot['transport_events'] = list(transport_events)
                 now = time.monotonic()
                 if now - last_publish < 0.05 and chunk.get("status") != "COMPLETED":
                     continue
@@ -334,7 +354,9 @@ class JobRuntime:
                 await self._notify(job_id)
         finally:
             await upstream.aclose()
+        await report_transport('upstream_complete')
         result = clean_result(latest)
+        result['transport_events'] = list(transport_events)
         completed_progress = progress_tracker.finish("completed")
         if completed_progress:
             progress_states[completed_progress["id"]] = completed_progress

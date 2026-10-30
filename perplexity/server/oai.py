@@ -21,6 +21,7 @@ from .file_sources import (
 from .files_store import FileEntry, MAX_FILE_BYTES, get_files_store, attachment_input_budget
 from .job_responses import completion_response, error_response
 from .job_store import JobError
+from .tool_bridge import get_bridge, bridge_mcp
 from .session_runtime import stream_delta as _stream_delta
 from .utils import create_oai_error_response, generate_oai_models
 from .webui_sessions import InvalidWebUISession, WebUISessionNotFound, SessionBusy
@@ -87,15 +88,33 @@ async def oai_chat_completions(request: Request):
         return error
     try:
         body = await read_json(request)
+        # Gateways such as Sub2API inject a default effort when translating
+        # Anthropic Messages. Perplexity has no effort-level control, so accept
+        # known OAI values without changing the requested model/thinking mode.
+        effort = body.pop("reasoning_effort", None)
+        if effort is not None and (not isinstance(effort, str) or effort not in {
+            "none", "minimal", "low", "medium", "high", "xhigh", "max",
+        }):
+            raise ValueError("Invalid reasoning_effort; use thinking=true to enable thinking")
         runtime = await get_job_runtime()
+        bridge = get_bridge(runtime)
+        messages = body.get("messages", [])
+        has_tool_history = isinstance(messages, list) and any(
+            isinstance(msg, dict) and (msg.get("role") == "tool" or msg.get("tool_calls")) for msg in messages)
+        if bridge and (has_tool_history or body.get("tools")):
+            return await bridge.response(body, request=request)
         job = await submit_chat(body, runtime, origin="oai", idempotency_key=request.headers.get("idempotency-key"))
-        stream = body.get("stream", True)
+        # OpenAI clients/gateways may omit a false stream flag during encoding.
+        stream = body.get("stream", False)
         progress = body.get("perplexity", {}).get("include_progress", False)
         body.clear()
         return await completion_response(runtime, job, stream=stream,
             include_progress=progress, request=request)
     except Exception as exc:
         return _session_error_response(exc)
+
+
+mcp.custom_route("/bridge/{secret}/mcp", methods=["POST", "GET", "DELETE"])(bridge_mcp)
 
 
 @mcp.custom_route("/v1/files", methods=["POST"])

@@ -1681,6 +1681,7 @@ dependencies = [
     { name = "aiohttp-socks" },
     { name = "curl-cffi" },
     { name = "fastmcp" },
+    { name = "jsonschema" },
     { name = "python-dotenv" },
 ]
 
@@ -1704,6 +1705,7 @@ requires-dist = [
     { name = "fastmcp", specifier = ">=2.14.2,<3.0.0" },
     { name = "flake8", marker = "extra == 'dev'", specifier = ">=6.0.0" },
     { name = "isort", marker = "extra == 'dev'", specifier = ">=5.12.0" },
+    { name = "jsonschema", specifier = ">=4.20,<5" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.5.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.0" },

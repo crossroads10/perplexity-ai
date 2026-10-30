@@ -35,8 +35,8 @@ async def read_json(request):
     return value
 
 
-def latest_user_message(messages):
-    if not isinstance(messages, list) or not messages or len(messages) > 200:
+def latest_user_message(messages, *, max_messages=200):
+    if not isinstance(messages, list) or not messages or (max_messages is not None and len(messages) > max_messages):
         raise ValueError("messages must contain 1..200 entries including a user message")
     for message in reversed(messages):
         if isinstance(message, dict) and message.get("role") == "user":
@@ -117,7 +117,7 @@ async def parse_chat_body(body, pool, *, origin="webui"):
     model_id, messages = body.get("model"), body.get("messages")
     if not isinstance(model_id, str) or not model_id:
         raise ValueError("model is required")
-    user = latest_user_message(messages)
+    user = latest_user_message(messages, max_messages=None if origin == "oai" else 200)
     session_id = body.get("session_id")
     if session_id is not None:
         validate_session_id(session_id)

@@ -329,7 +329,4 @@ def sanitize_query(query: str) -> str:
     if not query:
         raise ValidationError("Query cannot be empty")
 
-    if len(query) > 10000:
-        raise ValidationError("Query is too long (max 10000 characters)")
-
     return query

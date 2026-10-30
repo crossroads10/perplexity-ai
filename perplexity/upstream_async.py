@@ -36,7 +36,8 @@ async def refresh_account(client: Client):
 
 async def search_stream(client: Client, *, query: str, mode: str, model=None,
                         sources=None, language="en-US", follow_up=None, incognito=False,
-                        files=None, timeout=300, file_upload_timeout=180) -> AsyncIterator[dict]:
+                        files=None, timeout=300, file_upload_timeout=180,
+                        progress_callback=None) -> AsyncIterator[dict]:
     """One connection owner per task. Cancelling this generator closes only its I/O."""
     files = files or {}
     client.prepare_search(query, mode, model, sources, language, follow_up, incognito)
@@ -45,9 +46,12 @@ async def search_stream(client: Client, *, query: str, mode: str, model=None,
                             impersonate="chrome", max_clients=1,
                             proxy=SOCKS_PROXY.split("#")[0] if SOCKS_PROXY else None) as session:
         uploaded = []
+        if files and progress_callback:
+            await progress_callback('uploading')
         for filename, content in files.items():
             content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
             sign = await session.post(ENDPOINT_UPLOAD_URL,
+                headers=client.account_request_headers(),
                 params={"version": "2.18", "source": "default"},
                 json={"content_type": content_type, "file_size": len(content),
                       "filename": filename, "force_image": False, "source": "default"},
@@ -67,6 +71,8 @@ async def search_stream(client: Client, *, query: str, mode: str, model=None,
                 multipart.close()
         payload, headers = client.prepare_search(query, mode, model, sources, language,
                                                  follow_up, incognito, uploaded)
+        if progress_callback:
+            await progress_callback('waiting_model')
         queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=128)
         buffered = 0
         header_bytes = 0

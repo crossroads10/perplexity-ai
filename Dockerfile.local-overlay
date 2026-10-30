@@ -1,0 +1,9 @@
+# Local code-only update: reuse the installed, known-working dependencies.
+# The ordinary Dockerfile remains the clean-install build.
+ARG BASE_IMAGE=perplexity-ai-perplexity-mcp:latest
+FROM ${BASE_IMAGE}
+COPY perplexity/client.py perplexity/upstream_async.py /app/perplexity/
+COPY perplexity/server/app.py perplexity/server/oai.py perplexity/server/job_runtime.py perplexity/server/tool_bridge.py perplexity/server/chat_input.py perplexity/server/main.py perplexity/server/anthropic.py perplexity/server/bridge_receipts.py /app/perplexity/server/
+RUN python -c "import jsonschema"
+COPY perplexity/server/bridge_support.py /app/perplexity/server/
+COPY perplexity/server/bridge_context.py /app/perplexity/server/

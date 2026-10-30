@@ -12,6 +12,7 @@ setup_logger()
 
 from . import admin  # noqa: F401
 from . import oai  # noqa: F401
+from . import anthropic  # noqa: F401
 from . import webui  # noqa: F401
 from . import jobs  # noqa: F401
 from .app import get_pool, mcp
