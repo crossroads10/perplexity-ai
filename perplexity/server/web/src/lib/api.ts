@@ -44,9 +44,14 @@ export interface ApiResponse<T = unknown> {
   config?: T
 }
 
-export async function fetchPoolStatus(): Promise<PoolStatus> {
-  const resp = await fetch(`${API_BASE}/pool/status`)
-  return resp.json()
+export async function fetchPoolStatus(signal?: AbortSignal): Promise<PoolStatus> {
+  const resp = await fetch(`${API_BASE}/pool/status`, { signal })
+  if (!resp.ok) throw new Error(`Account status unavailable (${resp.status})`)
+  const data = await resp.json()
+  if (!data || !Array.isArray(data.clients) || typeof data.total !== 'number' || typeof data.available !== 'number') {
+    throw new Error('Invalid account status response')
+  }
+  return data
 }
 
 export async function verifyAdminToken(token: string): Promise<boolean> {
@@ -59,20 +64,24 @@ export async function verifyAdminToken(token: string): Promise<boolean> {
 }
 
 export async function fetchHeartbeatConfig(
-  adminToken: string
+  adminToken: string,
+  signal?: AbortSignal
 ): Promise<ApiResponse<HeartbeatConfig>> {
   const resp = await fetch(`${API_BASE}/heartbeat/config`, {
+    signal,
     headers: {
       'X-Admin-Token': adminToken
     }
   })
+  if (!resp.ok) throw new Error(`Renewal settings unavailable (${resp.status})`)
   return resp.json()
 }
 
-export async function fetchFallbackConfig(): Promise<
+export async function fetchFallbackConfig(signal?: AbortSignal): Promise<
   ApiResponse<FallbackConfig>
 > {
-  const resp = await fetch(`${API_BASE}/fallback/config`)
+  const resp = await fetch(`${API_BASE}/fallback/config`, { signal })
+  if (!resp.ok) throw new Error(`Fallback settings unavailable (${resp.status})`)
   return resp.json()
 }
 
@@ -91,10 +100,11 @@ export async function updateFallbackConfig(
   return resp.json()
 }
 
-export async function fetchIncognitoConfig(): Promise<
+export async function fetchIncognitoConfig(signal?: AbortSignal): Promise<
   ApiResponse<IncognitoConfig>
 > {
-  const resp = await fetch(`${API_BASE}/incognito/config`)
+  const resp = await fetch(`${API_BASE}/incognito/config`, { signal })
+  if (!resp.ok) throw new Error(`History settings unavailable (${resp.status})`)
   return resp.json()
 }
 

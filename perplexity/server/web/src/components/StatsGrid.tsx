@@ -1,54 +1,48 @@
-import { useMemo } from 'react'
 import { BrutalistCard } from './ui/BrutalistCard'
 import { PoolStatus, HeartbeatConfig } from 'lib/api'
 
 interface StatsGridProps {
   data: PoolStatus
   hbConfig: HeartbeatConfig | null
+  hasLoaded?: boolean
 }
 
-export function StatsGrid({ data, hbConfig }: StatsGridProps) {
-  const proCount = useMemo(
-    () => (data.clients || []).filter((c) => c.state === 'normal').length,
-    [data.clients]
-  )
-
-  const downgradeCount = useMemo(
-    () => (data.clients || []).filter((c) => c.state === 'downgrade').length,
-    [data.clients]
-  )
-
+export function StatsGrid({
+  data,
+  hbConfig,
+  hasLoaded = true
+}: StatsGridProps) {
   const getAutoRenewStatus = () => {
-    if (!hbConfig) return { label: 'UNKNOWN', color: 'text-gray-500' }
-    if (!hbConfig.enable) return { label: 'DISABLED', color: 'text-gray-500' }
-    return { label: 'ACTIVE', color: 'text-green-500' }
+    if (!hbConfig) return { label: '—', color: 'text-gray-500' }
+    if (!hbConfig.enable) return { label: 'Off', color: 'text-gray-500' }
+    return { label: 'On', color: 'text-green-500' }
   }
 
   const hbStatus = getAutoRenewStatus()
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-12">
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6 mb-8">
       <BrutalistCard
         number="01"
-        label="Total Clients"
-        value={data.total || 0}
+        label="Total accounts"
+        value={hasLoaded ? data.total : '—'}
         colorClass="text-acid"
       />
       <BrutalistCard
         number="02"
-        label="Pro"
-        value={proCount}
+        label="Available"
+        value={hasLoaded ? data.available : '—'}
         colorClass="text-green-400"
       />
       <BrutalistCard
         number="03"
-        label="Downgrade"
-        value={downgradeCount}
+        label="Unavailable"
+        value={hasLoaded ? Math.max(0, data.total - data.available) : '—'}
         colorClass="text-yellow-400"
       />
       <BrutalistCard
         number="04"
-        label="Auto Renew Cookie"
+        label="Auto renewal"
         value={hbStatus.label}
         colorClass={hbStatus.color}
       />

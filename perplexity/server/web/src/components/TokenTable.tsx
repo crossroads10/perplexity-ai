@@ -1,8 +1,17 @@
 import { useState } from 'react'
-import { ClientInfo, apiCall, updateFallbackConfig, updateIncognitoConfig, downloadSingleTokenConfig } from 'lib/api'
+import {
+  ClientInfo,
+  apiCall,
+  updateFallbackConfig,
+  updateIncognitoConfig,
+  downloadSingleTokenConfig
+} from 'lib/api'
 
 interface TokenTableProps {
   clients: ClientInfo[]
+  loading?: boolean
+  loadError?: string | null
+  settingsReady?: boolean
   adminToken: string
   isAuthenticated: boolean
   fallbackToAuto: boolean
@@ -17,6 +26,9 @@ interface TokenTableProps {
 
 export function TokenTable({
   clients,
+  loading = false,
+  loadError = null,
+  settingsReady = true,
   adminToken,
   isAuthenticated,
   fallbackToAuto,
@@ -26,12 +38,30 @@ export function TokenTable({
   onAddClick,
   onConfirmDelete,
   onFallbackChange,
-  onIncognitoChange,
+  onIncognitoChange
 }: TokenTableProps) {
   const [testingIds, setTestingIds] = useState<Set<string>>(new Set())
   const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set())
   const [updatingFallback, setUpdatingFallback] = useState(false)
   const [updatingIncognito, setUpdatingIncognito] = useState(false)
+  const [query, setQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const filteredClients = clients.filter((client) => {
+    const matchesQuery = client.id
+      .toLowerCase()
+      .includes(query.trim().toLowerCase())
+    const matchesStatus =
+      statusFilter === 'all' ||
+      (statusFilter === 'available' && client.enabled && client.available) ||
+      (statusFilter === 'unavailable' &&
+        (!client.enabled || !client.available)) ||
+      (statusFilter === 'disabled' && !client.enabled)
+    return matchesQuery && matchesStatus
+  })
+  const clearFilters = () => {
+    setQuery('')
+    setStatusFilter('all')
+  }
 
   const getWeightColor = (weight: number) => {
     if (weight >= 70) return 'bg-acid'
@@ -56,7 +86,7 @@ export function TokenTable({
     const actionMap: Record<string, string> = {
       enable: 'ONLINE',
       disable: 'OFFLINE',
-      reset: 'RESET',
+      reset: 'RESET'
     }
 
     if (resp.status === 'ok') {
@@ -100,7 +130,10 @@ export function TokenTable({
     setUpdatingFallback(true)
     try {
       const newValue = !fallbackToAuto
-      const resp = await updateFallbackConfig({ fallback_to_auto: newValue }, adminToken)
+      const resp = await updateFallbackConfig(
+        { fallback_to_auto: newValue },
+        adminToken
+      )
       if (resp.status === 'ok') {
         onFallbackChange(newValue)
         onToast(
@@ -126,7 +159,10 @@ export function TokenTable({
     setUpdatingIncognito(true)
     try {
       const newValue = !incognitoEnabled
-      const resp = await updateIncognitoConfig({ enabled: newValue }, adminToken)
+      const resp = await updateIncognitoConfig(
+        { enabled: newValue },
+        adminToken
+      )
       if (resp.status === 'ok') {
         onIncognitoChange(newValue)
         onToast(
@@ -152,7 +188,9 @@ export function TokenTable({
     setDownloadingIds((prev) => new Set(prev).add(id))
     try {
       const config = await downloadSingleTokenConfig(id, adminToken)
-      const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' })
+      const blob = new Blob([JSON.stringify(config, null, 2)], {
+        type: 'application/json'
+      })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -174,19 +212,24 @@ export function TokenTable({
   }
 
   return (
-    <div className="border-2 border-white bg-black p-1 shadow-[8px_8px_0px_0px_rgba(255,255,255,0.2)]">
+    <div className="min-w-0 border-2 border-white bg-black p-1 shadow-[6px_6px_0px_0px_rgba(255,255,255,0.2)]">
       <div className="bg-gray-900 border border-gray-800 p-4 md:p-6">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 border-b border-gray-800 pb-6">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-5 gap-4 border-b border-gray-800 pb-5">
           <h2 className="text-2xl font-bold uppercase tracking-tight flex items-center gap-3">
-            <span className="w-3 h-3 bg-acid block animate-pulse"></span>
-            Active Tokens
+            <span className="size-3 bg-acid block animate-pulse"></span>
+            Accounts
           </h2>
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
             <button
               onClick={handleToggleIncognito}
-              disabled={!isAuthenticated || updatingIncognito}
+              disabled={!isAuthenticated || !settingsReady || updatingIncognito}
+              title={
+                settingsReady
+                  ? 'Choose whether queries save history'
+                  : 'Waiting for settings to load'
+              }
               className={`px-4 py-2 font-bold border transition-all font-mono text-sm uppercase flex items-center gap-2 ${
-                !isAuthenticated || updatingIncognito
+                !isAuthenticated || !settingsReady || updatingIncognito
                   ? 'bg-gray-800 text-gray-500 border-gray-700 cursor-not-allowed'
                   : incognitoEnabled
                     ? 'bg-purple-500 text-black border-purple-500 shadow-[4px_4px_0px_0px_rgba(168,85,247,0.5)] hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] hover:bg-white'
@@ -194,7 +237,7 @@ export function TokenTable({
               }`}
             >
               <svg
-                className="w-4 h-4"
+                className="size-4"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -203,19 +246,29 @@ export function TokenTable({
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2}
-                  d={incognitoEnabled
-                    ? "M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21"
-                    : "M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                  d={
+                    incognitoEnabled
+                      ? 'M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21'
+                      : 'M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z'
                   }
                 />
               </svg>
-              {updatingIncognito ? '...' : incognitoEnabled ? 'INCOGNITO' : 'NORMAL'}
+              {updatingIncognito
+                ? '...'
+                : incognitoEnabled
+                  ? 'INCOGNITO'
+                  : 'NORMAL'}
             </button>
             <button
               onClick={handleToggleFallback}
-              disabled={!isAuthenticated || updatingFallback}
+              disabled={!isAuthenticated || !settingsReady || updatingFallback}
+              title={
+                settingsReady
+                  ? 'Choose whether unavailable models may fall back to Auto'
+                  : 'Waiting for settings to load'
+              }
               className={`px-4 py-2 font-bold border transition-all font-mono text-sm uppercase flex items-center gap-2 ${
-                !isAuthenticated || updatingFallback
+                !isAuthenticated || !settingsReady || updatingFallback
                   ? 'bg-gray-800 text-gray-500 border-gray-700 cursor-not-allowed'
                   : fallbackToAuto
                     ? 'bg-orange-500 text-black border-orange-500 shadow-[4px_4px_0px_0px_rgba(249,115,22,0.5)] hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] hover:bg-white'
@@ -223,7 +276,9 @@ export function TokenTable({
               }`}
             >
               <svg
-                className={`w-4 h-4 transition-transform ${fallbackToAuto ? 'rotate-180' : ''}`}
+                className={`size-4 transition-transform ${
+                  fallbackToAuto ? 'rotate-180' : ''
+                }`}
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -238,6 +293,7 @@ export function TokenTable({
               {updatingFallback ? '...' : fallbackToAuto ? 'DOWNGRADE' : 'PRO'}
             </button>
             <button
+              disabled={!isAuthenticated}
               onClick={() => {
                 if (!isAuthenticated) {
                   onToast('AUTH_REQUIRED', 'error')
@@ -251,18 +307,102 @@ export function TokenTable({
                   : 'bg-gray-700 text-gray-500 border-gray-600 cursor-not-allowed'
               }`}
             >
-              + NEW TOKEN
+              + Add account
             </button>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          {!clients || clients.length === 0 ? (
-            <div className="text-center py-20 font-mono text-gray-500 border-2 border-dashed border-gray-800">
-              NO_DATA_FOUND // INJECT_NEW_TOKEN
+        <div className="mb-4 flex flex-col sm:flex-row gap-3">
+          <label className="flex-1 min-w-0 text-xs text-gray-400">
+            Search accounts
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search by account ID…"
+              className="mt-2 block w-full border border-gray-600 bg-black/40 px-3 py-2.5 text-sm text-white placeholder:text-gray-500 focus:border-acid focus:outline-none"
+            />
+          </label>
+          <label className="text-xs text-gray-400">
+            Account status
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              className="mt-2 block w-full sm:w-44 border border-gray-600 bg-gray-900 px-3 py-2.5 text-sm text-white focus:border-acid focus:outline-none"
+            >
+              <option value="all">All accounts</option>
+              <option value="available">Available</option>
+              <option value="unavailable">Unavailable</option>
+              <option value="disabled">Disabled</option>
+            </select>
+          </label>
+        </div>
+        {!loading && !loadError && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-400">
+            <span role="status">
+              Showing {filteredClients.length} of {clients.length} accounts
+            </span>
+            {(query || statusFilter !== 'all') && (
+              <button
+                onClick={clearFilters}
+                className="text-acid underline underline-offset-4"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+        )}
+        {!loading && !loadError && filteredClients.length > 0 && (
+          <p className="mb-3 text-xs text-gray-400 md:hidden">
+            Swipe the table to view all columns and controls.
+          </p>
+        )}
+        <div
+          className="overflow-x-auto"
+          role="region"
+          aria-label="Accounts table"
+          tabIndex={0}
+        >
+          {loading ? (
+            <div role="status" className="py-12 text-center text-gray-400">
+              Loading accounts…
+            </div>
+          ) : loadError ? (
+            <div className="py-12 text-center text-gray-400">
+              Account status is unavailable. Use Refresh to try again.
+            </div>
+          ) : clients.length === 0 ? (
+            <div className="text-center py-12 text-gray-400 border border-dashed border-gray-700">
+              <p className="font-semibold text-white">No accounts yet</p>
+              <p className="mt-2 text-sm">
+                {isAuthenticated
+                  ? 'Add your first Perplexity account to get started.'
+                  : 'Sign in with an admin token to add an account.'}
+              </p>
+              {isAuthenticated && (
+                <button
+                  onClick={onAddClick}
+                  className="mt-4 border border-acid px-4 py-2 text-sm text-acid"
+                >
+                  Add account
+                </button>
+              )}
+            </div>
+          ) : filteredClients.length === 0 ? (
+            <div className="py-12 text-center text-gray-400">
+              <p className="font-semibold text-white">No matching accounts</p>
+              <p className="mt-2 text-sm">
+                Try another account ID or clear the filters.
+              </p>
+              <button
+                onClick={clearFilters}
+                className="mt-4 text-sm text-acid underline underline-offset-4"
+              >
+                Reset search and filters
+              </button>
             </div>
           ) : (
-            <table className="w-full text-left border-collapse">
+            <table className="w-full min-w-[780px] text-left border-collapse">
               <thead>
                 <tr className="border-b-2 border-gray-700">
                   <th className="p-4 font-mono text-xs text-gray-500 uppercase tracking-widest">
@@ -286,140 +426,163 @@ export function TokenTable({
                 </tr>
               </thead>
               <tbody className="font-mono text-sm">
-                {clients.map((c) => {
-                const isDisabledInProOnlyMode = !fallbackToAuto && c.state === 'downgrade'
-                return (
-                  <tr
-                    key={c.id}
-                    className={`border-b border-gray-800 transition-colors group ${
-                      isDisabledInProOnlyMode
-                        ? 'opacity-40 bg-gray-900/30'
-                        : 'hover:bg-gray-900/50'
-                    }`}
-                  >
-                    <td className="p-4 font-bold text-white">
-                      <span className="text-neon-blue mr-2">&gt;</span>
-                      {maskIdentifier(c.id)}
-                      {c.subscription_tier === 'max' && (
-                        <span className="ml-2 border border-neon-pink px-1 text-[9px] uppercase text-neon-pink">
-                          Max
-                        </span>
-                      )}
-                    </td>
-                    <td className="p-4">
-                      {!c.enabled ? (
-                        <span className="px-2 py-1 bg-gray-800 text-gray-500 text-xs border border-gray-700">
-                          DISABLED
-                        </span>
-                      ) : !c.available ? (
-                        <span className="px-2 py-1 bg-yellow-900/30 text-yellow-400 text-xs border border-yellow-900">
-                          BACKOFF
-                        </span>
-                      ) : c.state === 'offline' ? (
-                        <span className="px-2 py-1 bg-red-900/30 text-red-400 text-xs border border-red-900">
-                          OFFLINE
-                        </span>
-                      ) : c.state === 'downgrade' ? (
-                        <span className="px-2 py-1 bg-orange-900/30 text-orange-400 text-xs border border-orange-900">
-                          DOWNGRADE
-                        </span>
-                      ) : c.state === 'normal' ? (
-                        <span className="px-2 py-1 bg-green-900/30 text-green-400 text-xs border border-green-900">
-                          PRO
-                        </span>
-                      ) : (
-                        <span className="px-2 py-1 bg-blue-900/30 text-blue-400 text-xs border border-blue-900">
-                          READY
-                        </span>
-                      )}
-                    </td>
-                    <td className="p-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-24 h-2 bg-gray-800 border border-gray-700 overflow-hidden">
-                          <div
-                            className={`h-full ${getWeightColor(c.weight)} transition-all duration-500`}
-                            style={{ width: `${c.weight}%` }}
-                          ></div>
-                        </div>
-                        <span className="text-xs text-gray-500">{c.weight}%</span>
-                      </div>
-                    </td>
-                    <td className="p-4 text-gray-400">
-                      <div>{c.request_count || 0}</div>
-                      <div
-                        className={
-                          c.fail_count > 0 || c.pro_fail_count > 0
-                            ? 'text-danger text-xs'
-                            : 'text-gray-600 text-xs'
-                        }
-                      >
-                        E:{c.fail_count} / P:{c.pro_fail_count}
-                      </div>
-                    </td>
-                    <td className="p-4 text-gray-500 text-xs">
-                      {c.last_heartbeat_at
-                        ? new Date(c.last_heartbeat_at).toLocaleTimeString()
-                        : '-'}
-                    </td>
-                    <td className="p-4 text-right">
-                      <div
-                        className={`flex justify-end gap-2 ${isAuthenticated ? '' : 'opacity-50'}`}
-                      >
-                        <button
-                          className={`p-1 transition-colors ${
-                            isAuthenticated && !downloadingIds.has(c.id)
-                              ? 'hover:text-neon-blue'
-                              : 'cursor-not-allowed opacity-50'
-                          }`}
-                          onClick={() => handleDownload(c.id)}
-                          title="Download Config"
-                          disabled={!isAuthenticated || downloadingIds.has(c.id)}
-                        >
-                          {downloadingIds.has(c.id) ? '[...]' : '[DL]'}
-                        </button>
-                        {c.enabled ? (
-                          <button
-                            className={`p-1 transition-colors ${isAuthenticated ? 'hover:text-yellow-500' : 'cursor-not-allowed'}`}
-                            onClick={() => handleClientAction('disable', c.id)}
-                            title="Disable"
-                            disabled={!isAuthenticated}
-                          >
-                            [PAUSE]
-                          </button>
-                        ) : (
-                          <button
-                            className={`p-1 transition-colors ${isAuthenticated ? 'hover:text-green-500' : 'cursor-not-allowed'}`}
-                            onClick={() => handleClientAction('enable', c.id)}
-                            title="Enable"
-                            disabled={!isAuthenticated}
-                          >
-                            [RESUME]
-                          </button>
+                {filteredClients.map((c) => {
+                  const isDisabledInProOnlyMode =
+                    settingsReady && !fallbackToAuto && c.state === 'downgrade'
+                  return (
+                    <tr
+                      key={c.id}
+                      className={`border-b border-gray-800 transition-colors group ${
+                        isDisabledInProOnlyMode
+                          ? 'opacity-40 bg-gray-900/30'
+                          : 'hover:bg-gray-900/50'
+                      }`}
+                    >
+                      <td className="p-4 max-w-64 break-words font-bold text-white">
+                        <span className="text-neon-blue mr-2">&gt;</span>
+                        {isAuthenticated ? c.id : maskIdentifier(c.id)}
+                        {c.subscription_tier === 'max' && (
+                          <span className="ml-2 border border-neon-pink px-1 text-[9px] uppercase text-neon-pink">
+                            Max
+                          </span>
                         )}
-                        <button
-                          className={`p-1 transition-colors ${
-                            isAuthenticated && !testingIds.has(c.id)
-                              ? 'hover:text-neon-blue'
-                              : 'cursor-not-allowed opacity-50'
+                      </td>
+                      <td className="p-4">
+                        {!c.enabled ? (
+                          <span className="px-2 py-1 bg-gray-800 text-gray-500 text-xs border border-gray-700">
+                            DISABLED
+                          </span>
+                        ) : c.state === 'offline' ? (
+                          <span className="px-2 py-1 bg-red-900/30 text-red-400 text-xs border border-red-900">
+                            OFFLINE
+                          </span>
+                        ) : !c.available ? (
+                          <span className="px-2 py-1 bg-yellow-900/30 text-yellow-400 text-xs border border-yellow-900">
+                            BACKOFF
+                          </span>
+                        ) : c.state === 'downgrade' ? (
+                          <span className="px-2 py-1 bg-orange-900/30 text-orange-400 text-xs border border-orange-900">
+                            DOWNGRADE
+                          </span>
+                        ) : c.state === 'normal' ? (
+                          <span className="px-2 py-1 bg-green-900/30 text-green-400 text-xs border border-green-900">
+                            PRO
+                          </span>
+                        ) : (
+                          <span className="px-2 py-1 bg-blue-900/30 text-blue-400 text-xs border border-blue-900">
+                            READY
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-24 h-2 bg-gray-800 border border-gray-700 overflow-hidden">
+                            <div
+                              className={`h-full ${getWeightColor(
+                                c.weight
+                              )} transition-all duration-500`}
+                              style={{ width: `${c.weight}%` }}
+                            ></div>
+                          </div>
+                          <span className="text-xs text-gray-500">
+                            {c.weight}%
+                          </span>
+                        </div>
+                      </td>
+                      <td className="p-4 text-gray-400">
+                        <div>{c.request_count || 0}</div>
+                        <div
+                          className={
+                            c.fail_count > 0 || c.pro_fail_count > 0
+                              ? 'text-danger text-xs'
+                              : 'text-gray-600 text-xs'
+                          }
+                        >
+                          E:{c.fail_count} / P:{c.pro_fail_count}
+                        </div>
+                      </td>
+                      <td className="p-4 text-gray-500 text-xs">
+                        {c.last_heartbeat_at
+                          ? new Date(c.last_heartbeat_at).toLocaleTimeString()
+                          : '-'}
+                      </td>
+                      <td className="p-4 text-right">
+                        <div
+                          className={`flex justify-end gap-2 ${
+                            isAuthenticated ? '' : 'opacity-50'
                           }`}
-                          onClick={() => handleTestClient(c.id)}
-                          title="Renew Cookie"
-                          disabled={!isAuthenticated || testingIds.has(c.id)}
                         >
-                          [TEST]
-                        </button>
-                        <button
-                          className={`p-1 transition-colors ${isAuthenticated ? 'hover:text-danger' : 'cursor-not-allowed'}`}
-                          onClick={() => onConfirmDelete(c.id)}
-                          title="Remove"
-                          disabled={!isAuthenticated}
-                        >
-                          [DEL]
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )
+                          <button
+                            className={`p-1 transition-colors ${
+                              isAuthenticated && !downloadingIds.has(c.id)
+                                ? 'hover:text-neon-blue'
+                                : 'cursor-not-allowed opacity-50'
+                            }`}
+                            onClick={() => handleDownload(c.id)}
+                            title="Download Config"
+                            disabled={
+                              !isAuthenticated || downloadingIds.has(c.id)
+                            }
+                          >
+                            {downloadingIds.has(c.id) ? '[...]' : '[DL]'}
+                          </button>
+                          {c.enabled ? (
+                            <button
+                              className={`p-1 transition-colors ${
+                                isAuthenticated
+                                  ? 'hover:text-yellow-500'
+                                  : 'cursor-not-allowed'
+                              }`}
+                              onClick={() =>
+                                handleClientAction('disable', c.id)
+                              }
+                              title="Disable"
+                              disabled={!isAuthenticated}
+                            >
+                              [PAUSE]
+                            </button>
+                          ) : (
+                            <button
+                              className={`p-1 transition-colors ${
+                                isAuthenticated
+                                  ? 'hover:text-green-500'
+                                  : 'cursor-not-allowed'
+                              }`}
+                              onClick={() => handleClientAction('enable', c.id)}
+                              title="Enable"
+                              disabled={!isAuthenticated}
+                            >
+                              [RESUME]
+                            </button>
+                          )}
+                          <button
+                            className={`p-1 transition-colors ${
+                              isAuthenticated && !testingIds.has(c.id)
+                                ? 'hover:text-neon-blue'
+                                : 'cursor-not-allowed opacity-50'
+                            }`}
+                            onClick={() => handleTestClient(c.id)}
+                            title="Renew Cookie"
+                            disabled={!isAuthenticated || testingIds.has(c.id)}
+                          >
+                            [TEST]
+                          </button>
+                          <button
+                            className={`p-1 transition-colors ${
+                              isAuthenticated
+                                ? 'hover:text-danger'
+                                : 'cursor-not-allowed'
+                            }`}
+                            onClick={() => onConfirmDelete(c.id)}
+                            title="Remove"
+                            disabled={!isAuthenticated}
+                          >
+                            [DEL]
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
                 })}
               </tbody>
             </table>

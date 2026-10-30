@@ -1,66 +1,108 @@
-import { useState, useEffect, useCallback } from 'react'
-import { fetchPoolStatus, fetchHeartbeatConfig, fetchFallbackConfig, fetchIncognitoConfig, PoolStatus, HeartbeatConfig, FallbackConfig, IncognitoConfig } from 'lib/api'
-import { useAuth } from './useAuth'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import {
+  fetchPoolStatus,
+  fetchHeartbeatConfig,
+  fetchFallbackConfig,
+  fetchIncognitoConfig,
+  PoolStatus,
+  HeartbeatConfig,
+  FallbackConfig,
+  IncognitoConfig
+} from 'lib/api'
 
-export function usePool() {
-  const { adminToken } = useAuth()
+export function usePool(adminToken: string) {
   const [data, setData] = useState<PoolStatus>({
     total: 0,
     available: 0,
     mode: '-',
-    clients: [],
+    clients: []
   })
   const [hbConfig, setHbConfig] = useState<HeartbeatConfig | null>(null)
-  const [fallbackConfig, setFallbackConfig] = useState<FallbackConfig>({ fallback_to_auto: true })
-  const [incognitoConfig, setIncognitoConfig] = useState<IncognitoConfig>({ enabled: false })
-  const [isLoading, setIsLoading] = useState(false)
+  const [fallbackConfig, setFallbackConfig] = useState<FallbackConfig>({
+    fallback_to_auto: true
+  })
+  const [incognitoConfig, setIncognitoConfig] = useState<IncognitoConfig>({
+    enabled: false
+  })
+  const [settingsReady, setSettingsReady] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
   const [lastSync, setLastSync] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [configError, setConfigError] = useState<string | null>(null)
+  const activeRequest = useRef<AbortController | null>(null)
 
   const refreshData = useCallback(async () => {
-    // Requires admin token for heartbeat config
-    if (!adminToken) {
-      // Just fetch pool status if no token
-      try {
-        const poolData = await fetchPoolStatus()
-        setData(poolData)
-        setLastSync(new Date().toLocaleTimeString('en-US', { hour12: false }))
-      } catch (e) {
-        console.error('Failed to fetch pool status:', e)
-      }
-      return
-    }
-
+    activeRequest.current?.abort()
+    const controller = new AbortController()
+    activeRequest.current = controller
+    const timeout = window.setTimeout(() => controller.abort(), 15000)
     setIsLoading(true)
     try {
-      const [poolData, hbResp, fallbackResp, incognitoResp] = await Promise.all([
-        fetchPoolStatus(),
-        fetchHeartbeatConfig(adminToken),
-        fetchFallbackConfig(),
-        fetchIncognitoConfig(),
+      const [pool, fallback, incognito, heartbeat] = await Promise.allSettled([
+        fetchPoolStatus(controller.signal),
+        fetchFallbackConfig(controller.signal),
+        fetchIncognitoConfig(controller.signal),
+        adminToken
+          ? fetchHeartbeatConfig(adminToken, controller.signal)
+          : Promise.resolve(null)
       ])
-      setData(poolData)
-      setLastSync(new Date().toLocaleTimeString('en-US', { hour12: false }))
-
-      if (hbResp.status === 'ok' && hbResp.config) {
-        setHbConfig(hbResp.config)
+      // A login, logout or newer refresh supersedes the previous response.
+      if (activeRequest.current !== controller) return
+      if (pool.status === 'fulfilled') {
+        setData(pool.value)
+        setLastSync(new Date().toLocaleTimeString([], { hour12: false }))
+        setError(null)
+      } else {
+        setError(
+          'Could not refresh account status. Check the connection and try again.'
+        )
       }
-      if (fallbackResp.status === 'ok' && fallbackResp.config) {
-        setFallbackConfig(fallbackResp.config)
-      }
-      if (incognitoResp.status === 'ok' && incognitoResp.config) {
-        setIncognitoConfig(incognitoResp.config)
-      }
-    } catch (e) {
-      console.error('Failed to fetch data:', e)
+      const fallbackOk =
+        fallback.status === 'fulfilled' &&
+        fallback.value?.status === 'ok' &&
+        !!fallback.value.config
+      const incognitoOk =
+        incognito.status === 'fulfilled' &&
+        incognito.value?.status === 'ok' &&
+        !!incognito.value.config
+      const heartbeatOk =
+        !adminToken ||
+        (heartbeat.status === 'fulfilled' &&
+          heartbeat.value?.status === 'ok' &&
+          !!heartbeat.value.config)
+      if (fallbackOk) setFallbackConfig(fallback.value.config!)
+      if (incognitoOk) setIncognitoConfig(incognito.value.config!)
+      setHbConfig(
+        heartbeat.status === 'fulfilled' && heartbeat.value?.status === 'ok'
+          ? heartbeat.value.config || null
+          : null
+      )
+      setSettingsReady(fallbackOk && incognitoOk)
+      setConfigError(
+        fallbackOk && incognitoOk && heartbeatOk
+          ? null
+          : 'Some settings could not be loaded. Refresh to retry; if this persists, sign in again.'
+      )
     } finally {
-      setIsLoading(false)
+      window.clearTimeout(timeout)
+      if (activeRequest.current === controller) {
+        activeRequest.current = null
+        setIsLoading(false)
+      }
     }
   }, [adminToken])
 
   useEffect(() => {
-    refreshData()
-    const interval = setInterval(refreshData, 30000)
-    return () => clearInterval(interval)
+    setHbConfig(null)
+    void refreshData()
+    const interval = window.setInterval(() => {
+      if (!activeRequest.current) void refreshData()
+    }, 30000)
+    return () => {
+      window.clearInterval(interval)
+      activeRequest.current?.abort()
+      activeRequest.current = null
+    }
   }, [refreshData])
 
   return {
@@ -71,8 +113,11 @@ export function usePool() {
     setFallbackConfig,
     incognitoConfig,
     setIncognitoConfig,
+    settingsReady,
     isLoading,
     lastSync,
-    refreshData,
+    error,
+    configError,
+    refreshData
   }
 }

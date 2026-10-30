@@ -19,7 +19,21 @@ type TabType = 'pool' | 'logs'
 export function App() {
   const { adminToken, isAuthenticated, login, logout } = useAuth()
   const { toasts, addToast, removeToast } = useToast()
-  const { data, hbConfig, setHbConfig, fallbackConfig, setFallbackConfig, incognitoConfig, setIncognitoConfig, lastSync, refreshData } = usePool()
+  const {
+    data,
+    hbConfig,
+    setHbConfig,
+    fallbackConfig,
+    setFallbackConfig,
+    incognitoConfig,
+    setIncognitoConfig,
+    settingsReady,
+    isLoading,
+    lastSync,
+    error,
+    configError,
+    refreshData
+  } = usePool(adminToken)
   const versionInfo = useVersionCheck()
 
   const [activeTab, setActiveTab] = useState<TabType>('pool')
@@ -30,6 +44,9 @@ export function App() {
 
   const handleLogout = useCallback(() => {
     logout()
+    setActiveTab('pool')
+    setIsAddModalOpen(false)
+    setIsConfirmModalOpen(false)
     addToast('LOGGED_OUT', 'success')
   }, [logout, addToast])
 
@@ -108,10 +125,10 @@ export function App() {
     <div className="min-h-screen text-gray-200 font-sans p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <header className="mb-8 border-b-4 border-white pb-6">
+        <header className="mb-6 border-b-2 border-gray-700 pb-6">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
             <div>
-              <h1 className="text-5xl md:text-7xl font-black uppercase tracking-tighter leading-none text-white mix-blend-difference">
+              <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tighter leading-none text-white">
                 Perplexity
                 <br />
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-acid via-neon-pink to-neon-blue">
@@ -119,7 +136,7 @@ export function App() {
                 </span>
               </h1>
               <p className="font-mono text-gray-400 mt-2 bg-gray-900 inline-block px-2">
-                /// MANAGER_v{__APP_VERSION__}
+                Manager v{__APP_VERSION__}
               </p>
               {versionInfo.hasUpdate && (
                 <a
@@ -132,17 +149,39 @@ export function App() {
                 </a>
               )}
             </div>
-            <div className="font-mono text-xs md:text-sm text-right">
+            <div className="font-mono text-xs md:text-sm text-left md:text-right">
               <a
                 href="/playground/"
                 className="inline-block mb-2 text-neon-pink hover:text-acid border-2 border-neon-pink hover:border-acid px-3 py-1 transition-colors uppercase"
               >
                 API Playground &rarr;
               </a>
-              <div className="text-acid">
-                {lastSync ? `LAST_SYNC: ${lastSync}` : 'SYNCING...'}
+              <div className="flex flex-wrap items-center gap-3 md:justify-end">
+                <span
+                  role="status"
+                  className={error ? 'text-yellow-400' : 'text-acid'}
+                >
+                  {isLoading
+                    ? 'Updating account status…'
+                    : error
+                      ? 'Connection issue'
+                      : lastSync
+                        ? 'Connected'
+                        : 'Not connected'}
+                </span>
+                <button
+                  onClick={() => void refreshData()}
+                  disabled={isLoading}
+                  className="border border-gray-600 px-3 py-2 text-gray-200 hover:border-acid hover:text-acid disabled:opacity-50 disabled:cursor-wait"
+                >
+                  {isLoading ? 'Refreshing…' : 'Refresh'}
+                </button>
               </div>
-              <div className="text-gray-500">SYSTEM_STATUS: ONLINE</div>
+              <div className="mt-2 text-gray-400">
+                {lastSync
+                  ? `Last updated ${lastSync} · Auto-refresh 30s`
+                  : 'Waiting for the first successful update'}
+              </div>
             </div>
           </div>
         </header>
@@ -155,6 +194,20 @@ export function App() {
           onLogout={handleLogout}
           onAuthError={(msg) => addToast(msg, 'error')}
         />
+
+        {(error || configError) && (
+          <div
+            role="alert"
+            className="mb-6 border border-yellow-700 bg-yellow-950/30 p-4 text-sm text-yellow-200"
+          >
+            <p>{error || configError}</p>
+            {error && lastSync && (
+              <p className="mt-1 text-yellow-200/70">
+                Showing the last successful account update from {lastSync}.
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Tab Navigation - Only show Logs tab when authenticated */}
         {isAuthenticated && (
@@ -186,7 +239,7 @@ export function App() {
         {activeTab === 'pool' ? (
           <>
             {/* Stats Grid */}
-            <StatsGrid data={data} hbConfig={hbConfig} />
+            <StatsGrid data={data} hbConfig={hbConfig} hasLoaded={!!lastSync} />
 
             {/* Auto Renew Cookie Controls */}
             {isAuthenticated && hbConfig && (
@@ -203,6 +256,9 @@ export function App() {
             {/* Token Table */}
             <TokenTable
               clients={data.clients}
+              loading={isLoading && !lastSync}
+              loadError={!lastSync ? error : null}
+              settingsReady={settingsReady}
               adminToken={adminToken}
               isAuthenticated={isAuthenticated}
               fallbackToAuto={fallbackConfig.fallback_to_auto}
@@ -211,7 +267,9 @@ export function App() {
               onRefresh={refreshData}
               onAddClick={() => setIsAddModalOpen(true)}
               onConfirmDelete={confirmDelete}
-              onFallbackChange={(enabled) => setFallbackConfig({ fallback_to_auto: enabled })}
+              onFallbackChange={(enabled) =>
+                setFallbackConfig({ fallback_to_auto: enabled })
+              }
               onIncognitoChange={(enabled) => setIncognitoConfig({ enabled })}
             />
           </>
@@ -238,7 +296,12 @@ export function App() {
 
         {/* Toasts */}
         {toasts.map((t) => (
-          <Toast key={t.id} message={t.message} type={t.type} onClose={() => removeToast(t.id)} />
+          <Toast
+            key={t.id}
+            message={t.message}
+            type={t.type}
+            onClose={() => removeToast(t.id)}
+          />
         ))}
       </div>
     </div>

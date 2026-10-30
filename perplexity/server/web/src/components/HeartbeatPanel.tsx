@@ -16,7 +16,7 @@ export function HeartbeatPanel({
   isAuthenticated,
   onConfigUpdate,
   onToast,
-  onRefresh,
+  onRefresh
 }: HeartbeatPanelProps) {
   const [isConfigOpen, setIsConfigOpen] = useState(false)
   const [isGlobalTesting, setIsGlobalTesting] = useState(false)
@@ -25,7 +25,7 @@ export function HeartbeatPanel({
     question: hbConfig.question,
     interval: hbConfig.interval,
     tg_bot_token: hbConfig.tg_bot_token,
-    tg_chat_id: hbConfig.tg_chat_id,
+    tg_chat_id: hbConfig.tg_chat_id
   })
 
   const handleAutoRenewAction = async (action: string) => {
@@ -75,12 +75,16 @@ export function HeartbeatPanel({
 
   return (
     <div className="mb-8 p-4 border border-gray-700 bg-gray-900/30">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <h3 className="font-bold text-white uppercase tracking-wider">♥ Auto Renew Cookie</h3>
-          <div className="text-xs font-mono text-gray-500">RENEW INTERVAL: {hbConfig.interval}H</div>
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <h3 className="font-bold text-white uppercase tracking-wider">
+            ♥ Auto Renew Cookie
+          </h3>
+          <div className="text-xs font-mono text-gray-500">
+            RENEW INTERVAL: {hbConfig.interval}H
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setIsConfigOpen(!isConfigOpen)}
             className="px-3 py-1 bg-gray-800 border border-gray-600 hover:bg-white hover:text-black font-mono text-xs uppercase transition-colors"
@@ -111,7 +115,10 @@ export function HeartbeatPanel({
               <select
                 value={configForm.enable ? 'true' : 'false'}
                 onChange={(e) =>
-                  setConfigForm({ ...configForm, enable: e.target.value === 'true' })
+                  setConfigForm({
+                    ...configForm,
+                    enable: e.target.value === 'true'
+                  })
                 }
                 className="w-full bg-gray-800 border border-gray-700 px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-acid"
               >
@@ -130,7 +137,10 @@ export function HeartbeatPanel({
                 max="24"
                 value={configForm.interval}
                 onChange={(e) =>
-                  setConfigForm({ ...configForm, interval: parseFloat(e.target.value) || 6 })
+                  setConfigForm({
+                    ...configForm,
+                    interval: parseFloat(e.target.value) || 6
+                  })
                 }
                 className="w-full bg-gray-800 border border-gray-700 px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-acid"
               />
@@ -142,7 +152,9 @@ export function HeartbeatPanel({
               <input
                 type="text"
                 value={configForm.question}
-                onChange={(e) => setConfigForm({ ...configForm, question: e.target.value })}
+                onChange={(e) =>
+                  setConfigForm({ ...configForm, question: e.target.value })
+                }
                 className="w-full bg-gray-800 border border-gray-700 px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-acid"
               />
             </div>
@@ -154,10 +166,13 @@ export function HeartbeatPanel({
                 type="password"
                 value={configForm.tg_bot_token || ''}
                 onChange={(e) =>
-                  setConfigForm({ ...configForm, tg_bot_token: e.target.value || null })
+                  setConfigForm({
+                    ...configForm,
+                    tg_bot_token: e.target.value || null
+                  })
                 }
                 placeholder="Optional..."
-                className="w-full bg-gray-800 border border-gray-700 px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-acid placeholder-gray-600"
+                className="w-full bg-gray-800 border border-gray-700 px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-acid placeholder:text-gray-600"
               />
             </div>
             <div>
@@ -168,10 +183,13 @@ export function HeartbeatPanel({
                 type="text"
                 value={configForm.tg_chat_id || ''}
                 onChange={(e) =>
-                  setConfigForm({ ...configForm, tg_chat_id: e.target.value || null })
+                  setConfigForm({
+                    ...configForm,
+                    tg_chat_id: e.target.value || null
+                  })
                 }
                 placeholder="Optional..."
-                className="w-full bg-gray-800 border border-gray-700 px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-acid placeholder-gray-600"
+                className="w-full bg-gray-800 border border-gray-700 px-3 py-2 text-white font-mono text-sm focus:outline-none focus:border-acid placeholder:text-gray-600"
               />
             </div>
             <div className="flex items-end">
